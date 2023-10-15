@@ -22,8 +22,8 @@ Console.WriteLine("Hello, World!");
 
 var sw = Stopwatch.StartNew();
 
-BenchmarkRunner.Run<Benchmarks>(new Config());
-// BenchmarkRunner.Run<Benchmarks>(new CustomDebugConfig());
+// BenchmarkRunner.Run<Benchmarks>(new Config());
+BenchmarkRunner.Run<Benchmarks>(new CustomDebugConfig());
 
 Console.WriteLine($"Done in {sw.Elapsed.Humanize()}");
 
@@ -40,10 +40,6 @@ class Config : ManualConfig
         Add(DefaultConfig.Instance.GetColumnProviders().ToArray());
 
         SummaryStyle = BenchmarkDotNet.Reports.SummaryStyle.Default.WithTimeUnit(TimeUnit.Millisecond);
-
-
-
-
 
         var filter = new SimpleFilter(
             x =>
@@ -122,7 +118,7 @@ class CustomDebugConfig : Config, IConfig
 }
 
 
-[SimpleJob(RunStrategy.Monitoring, iterationCount: 10)]
+// [SimpleJob(RunStrategy.Monitoring, iterationCount: 10)]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByMethod)]
 [MinColumn, MaxColumn, MeanColumn, MedianColumn]
 public class Benchmarks
@@ -138,12 +134,12 @@ public class Benchmarks
 
     // [ParamsAllValues]
     // [Params(StoresEnum.RedisFsyncAlways)]
-    [Params(StoresEnum.Lightning, StoresEnum.FasterKVSpanByte, StoresEnum.ConcurrentDictionary)]
+    // [Params(StoresEnum.Lightning, StoresEnum.FasterKVSpanByte, StoresEnum.ConcurrentDictionary)]
+    [Params(StoresEnum.FasterKVSpanByte)]
     public StoresEnum Store { get; set; }
 
-    [ParamsAllValues]
-    // [Params(StoresEnum.RedisFsyncAlways)]
-    // [Params(StoresEnum.FasterKV, StoresEnum.FasterKVSpanByte)]
+    // [ParamsAllValues]
+    [Params(KeyRandomness.Random)]
     public KeyRandomness Key { get; set; }
 
     [GlobalSetup]
@@ -155,29 +151,36 @@ public class Benchmarks
 
         _res = new Guid[Count];
 
-        _store = Store switch
-        {
-            StoresEnum.RedisFsync1Sec => new RedisTradeKeyStore(Store),
-            StoresEnum.RedisFsyncAlways => new RedisTradeKeyStore(Store),
-            StoresEnum.Redis => new RedisTradeKeyStore(Store),
-            StoresEnum.Postgres => new PostgresStore(),
-            StoresEnum.Lightning => new LightningLmdbStore(),
-            StoresEnum.FasterKV => new FasterKvStore(Store),
-            StoresEnum.FasterKVSerialiser => new FasterKvStore(Store),
-            StoresEnum.FasterKVNoCommit => new FasterKvStore(Store),
-            StoresEnum.FasterKVSpanByte => new FasterKvStoreSpanByte(Store),
-            StoresEnum.ConcurrentDictionary => new ConcurrentDictionaryStore(),
-            _ => throw new ArgumentOutOfRangeException()
-        };
+        var storeType = Store;
+
+        _store = CreateStore(storeType);
 
         // Verify Correctness
-        var id1 = _store.GetOrCreateKeyAsync(_keys[0]);
-        var id2 = _store.GetOrCreateKeyAsync(_keys[0]);
+        var id1 = _store.GetOrCreateKeyAsync(_keys[0]).Result;
+        var id2 = _store.GetOrCreateKeyAsync(_keys[0]).Result;
 
-        if(id1.Result != id2.Result)
+        if(id1 != id2)
         {
             throw new Exception("Id1 != Id2");
         }
+    }
+
+    public static IStore CreateStore(StoresEnum storeType)
+    {
+        return storeType switch
+        {
+            StoresEnum.RedisFsync1Sec       => new RedisTradeKeyStore(storeType),
+            StoresEnum.RedisFsyncAlways     => new RedisTradeKeyStore(storeType),
+            StoresEnum.Redis                => new RedisTradeKeyStore(storeType),
+            StoresEnum.Postgres             => new PostgresStore(),
+            StoresEnum.Lightning            => new LightningLmdbStore(),
+            StoresEnum.FasterKV             => new FasterKvStore(storeType),
+            StoresEnum.FasterKVSerialiser   => new FasterKvStore(storeType),
+            StoresEnum.FasterKVNoCommit     => new FasterKvStore(storeType),
+            StoresEnum.FasterKVSpanByte     => new FasterKvStoreSpanByte(storeType),
+            StoresEnum.ConcurrentDictionary => new ConcurrentDictionaryStore(),
+            _                               => throw new ArgumentOutOfRangeException()
+        };
     }
 
     private static TradeKey CreateTradeKey()
@@ -345,7 +348,16 @@ public struct TradeKey
 
     public override string ToString()
     {
-        return $"{TradeDate:yyyy-MM-dd}-{ExchangeLinkId}-{ExchangeTradeId}";
+        return $"{TradeDate:yyyy-MM-dd}~{ExchangeLinkId}~{ExchangeTradeId}";
+    }
+
+    public TradeKey(string key)
+    {
+        var parts = key.Split('~');
+
+        TradeDate = DateOnly.Parse(parts[0]);
+        ExchangeLinkId = parts[1];
+        ExchangeTradeId = parts[2];
     }
 
     public int SpanSize => 4 + ExchangeLinkId.Length + ExchangeTradeId.Length;

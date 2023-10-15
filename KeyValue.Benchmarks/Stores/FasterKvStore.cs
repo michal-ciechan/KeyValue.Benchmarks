@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Text;
 using FASTER.core;
+using Humanizer;
 using LightningDB;
+using NUlid;
 
 namespace KeyValue.Benchmarks.Stores;
 
@@ -110,7 +112,7 @@ public class FasterKvStore : IStore
             ref RMWInfo rmwInfo
         )
         {
-            value = output = Guid.NewGuid();
+            value = output = Ulid.NewUlid().ToGuidFast();
             return true;
         }
     }
@@ -132,6 +134,23 @@ public class FasterKvStore : IStore
         await session.WaitForCommitAsync();
 
         return guid;
+    }
+
+    public void Cleanup()
+    {
+        if (Directory.Exists(_settings.CheckpointDir))
+        {
+            Directory.Delete(_settings.CheckpointDir, recursive: true);
+        }
+    }
+
+    public void Recover()
+    {
+        var sw = Stopwatch.StartNew();
+
+        var recoveryVer = _store.Recover();
+
+        Console.WriteLine($"Recovered to version {recoveryVer} in {sw.Elapsed.Humanize()}");
     }
 
 

@@ -4,4 +4,6 @@ public interface IStore : IDisposable
 {
     Guid GetOrCreateKey(TradeKey key);
     ValueTask<Guid> GetOrCreateKeyAsync(TradeKey key);
+    void Cleanup();
+    void Recover();
 }

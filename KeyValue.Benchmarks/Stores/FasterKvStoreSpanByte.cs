@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using FASTER.core;
+using Humanizer;
+using NUlid;
 
 namespace KeyValue.Benchmarks.Stores;
 
@@ -12,7 +14,7 @@ public class FasterKvStoreSpanByte : IStore
     private readonly CancellationTokenSource _cts;
     private readonly bool _waitForCommit;
 
-    public FasterKvStoreSpanByte(StoresEnum storesEnum)
+    public FasterKvStoreSpanByte(StoresEnum storesEnum, string checkpointDir = "Checkpoints")
     {
         _log = Devices.CreateLogDevice("hlog.log"); // backing storage device
         // _objlog = Devices.CreateLogDevice("hlog.obj.log");
@@ -20,7 +22,7 @@ public class FasterKvStoreSpanByte : IStore
         {
             LogDevice = _log,
             ObjectLogDevice = new NullDevice(),
-            CheckpointDir = "Checkpoints",
+            CheckpointDir = checkpointDir,
         };
 
         _waitForCommit = storesEnum != StoresEnum.FasterKVNoCommit;
@@ -37,18 +39,26 @@ public class FasterKvStoreSpanByte : IStore
                 {
                     sw.Restart();
 
-                    _store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver, tryIncremental: true)
-                        .GetAwaiter()
-                        .GetResult();
-
-                    var elapsedMs = sw.ElapsedMilliseconds;
-                    var remaining = 5 - elapsedMs;
-
-                    // Console.WriteLine($"Checkpoint took: {elapsedMs:N0}ms");
-
-                    if (remaining > 0)
+                    try
                     {
-                        Thread.Sleep((int)remaining);
+                        _store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver, tryIncremental: true)
+                            .GetAwaiter()
+                            .GetResult();
+
+                        var elapsedMs = sw.ElapsedMilliseconds;
+                        var remaining = 5 - elapsedMs;
+
+                        // Console.WriteLine($"Checkpoint took: {elapsedMs:N0}ms");
+
+                        if (remaining > 0)
+                        {
+                            Thread.Sleep((int)remaining);
+                        }
+
+                    }
+                    catch (Exception e)
+                    {
+
                     }
                 }
             }
@@ -58,14 +68,22 @@ public class FasterKvStoreSpanByte : IStore
         {
             _thread.Start();
         }
+    }
 
+    public void Recover()
+    {
+        var sw = Stopwatch.StartNew();
+
+        var recoveryVer = _store.Recover();
+
+        Console.WriteLine($"Recovered to version {recoveryVer} in {sw.Elapsed.Humanize()}");
     }
 
     public Guid GetOrCreateKey(TradeKey key)
     {
-        using var session = _store.For(TradeKeyFunctions.Instance).NewSession<TradeKeyFunctions>();
+        using var session = _store.For(TradeKeyFunctions.Instance).NewSession<FasterKvStoreSpanByte.TradeKeyFunctions>();
 
-        var guid = Guid.Empty;
+        var guid = Ulid.NewUlid().ToGuidFast();
 
         Span<byte> keySpan = stackalloc byte[key.SpanSize];
 
@@ -75,7 +93,7 @@ public class FasterKvStoreSpanByte : IStore
 
         var result = session.RMW(ref keySpanByte, ref guid);
 
-        if (result.IsPending)
+        if (_waitForCommit && result.IsPending)
         {
             session.CompletePending(wait: true, spinWaitForCommit: _waitForCommit);
         }
@@ -85,7 +103,7 @@ public class FasterKvStoreSpanByte : IStore
 
     public sealed class TradeKeyFunctions : FunctionsBase<SpanByte, Guid, Guid, Guid, Empty>
     {
-        public static readonly TradeKeyFunctions Instance = new TradeKeyFunctions();
+        public static readonly FasterKvStoreSpanByte.TradeKeyFunctions Instance = new FasterKvStoreSpanByte.TradeKeyFunctions();
 
         /// <inheritdoc />
         public override bool SingleWriter(
@@ -122,7 +140,7 @@ public class FasterKvStoreSpanByte : IStore
             ref Guid output,
             ref RMWInfo rmwInfo)
         {
-            value = output = Guid.NewGuid();
+            value = output = input;
             return true;
         }
 
@@ -135,7 +153,7 @@ public class FasterKvStoreSpanByte : IStore
             ref Guid output,
             ref RMWInfo rmwInfo)
         {
-            newValue = output = oldValue;
+            input = newValue = output = oldValue;
             return true;
         }
 
@@ -147,7 +165,7 @@ public class FasterKvStoreSpanByte : IStore
             ref Guid output,
             ref RMWInfo rmwInfo)
         {
-            output = value;
+            input = output = value;
             return true;
         }
 
@@ -157,12 +175,14 @@ public class FasterKvStoreSpanByte : IStore
 
         public override bool NeedInitialUpdate(ref SpanByte key, ref Guid input, ref Guid output, ref RMWInfo rmwInfo)
         {
-            return base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
+            var needInitialUpdate = base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
+
+            return needInitialUpdate;
         }
 
         public override bool NeedCopyUpdate(ref SpanByte key, ref Guid input, ref Guid oldValue, ref Guid output, ref RMWInfo rmwInfo)
         {
-            return base.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
+            return true;
         }
     }
 
@@ -181,5 +201,14 @@ public class FasterKvStoreSpanByte : IStore
         _store.Dispose();
         _settings.Dispose();
         _log.Dispose();
+    }
+
+    // Cleanup any existing dirs to make sure starting with fresh state
+    public void Cleanup()
+    {
+        if (Directory.Exists(_settings.CheckpointDir))
+        {
+            Directory.Delete(_settings.CheckpointDir, recursive: true);
+        }
     }
 }

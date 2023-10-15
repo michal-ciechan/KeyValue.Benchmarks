@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyValue.Benchmarks", "KeyValue.Benchmarks\KeyValue.Benchmarks.csproj", "{E6D41EF3-30D5-40AE-8DBA-3F4370FC3926}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyValue.CorrectnessChecker", "KeyValue.CorrectnessChecker\KeyValue.CorrectnessChecker.csproj", "{691E7097-F441-4088-A55D-6EE6B9CC048B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{E6D41EF3-30D5-40AE-8DBA-3F4370FC3926}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E6D41EF3-30D5-40AE-8DBA-3F4370FC3926}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E6D41EF3-30D5-40AE-8DBA-3F4370FC3926}.Release|Any CPU.Build.0 = Release|Any CPU
+		{691E7097-F441-4088-A55D-6EE6B9CC048B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{691E7097-F441-4088-A55D-6EE6B9CC048B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{691E7097-F441-4088-A55D-6EE6B9CC048B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{691E7097-F441-4088-A55D-6EE6B9CC048B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

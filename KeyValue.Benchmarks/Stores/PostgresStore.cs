@@ -4,6 +4,7 @@ using FluentMigrator;
 using FluentMigrator.Runner;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using NUlid;
 using Testcontainers.PostgreSql;
 
 namespace KeyValue.Benchmarks.Stores;
@@ -85,7 +86,7 @@ RETURNING trade_id
                 command.Parameters.AddWithValue("tradeDate", key.TradeDate);
                 command.Parameters.AddWithValue("exchangeLinkId", key.ExchangeLinkId);
                 command.Parameters.AddWithValue("exchangeTradeId", key.ExchangeTradeId);
-                command.Parameters.AddWithValue("tradeId", Guid.NewGuid());
+                command.Parameters.AddWithValue("tradeId", Ulid.NewUlid().ToGuidFast());
 
                 using (var reader = command.ExecuteReader())
                 {
@@ -120,7 +121,7 @@ RETURNING trade_id
                 command.Parameters.AddWithValue("tradeDate", key.TradeDate);
                 command.Parameters.AddWithValue("exchangeLinkId", key.ExchangeLinkId);
                 command.Parameters.AddWithValue("exchangeTradeId", key.ExchangeTradeId);
-                command.Parameters.AddWithValue("tradeId", Guid.NewGuid());
+                command.Parameters.AddWithValue("tradeId", Ulid.NewUlid().ToGuidFast());
 
                 using (var reader = await command.ExecuteReaderAsync())
                 {
@@ -133,6 +134,15 @@ RETURNING trade_id
                 }
             }
         }
+    }
+
+    public void Cleanup()
+    {
+    }
+
+    public void Recover()
+    {
+         throw new NotImplementedException("PostgresStore does not support recovery");
     }
 
     public void Dispose()

@@ -1,5 +1,6 @@
 using System.Text;
 using LightningDB;
+using NUlid;
 
 namespace KeyValue.Benchmarks.Stores;
 
@@ -11,15 +12,6 @@ public class LightningLmdbStore : IStore
     {
         _env = new LightningEnvironment("lightning_data");
         _env.Open();
-
-        using var tx = _env.BeginTransaction();
-        using var db = tx.OpenDatabase(configuration: new DatabaseConfiguration { Flags = DatabaseOpenFlags.Create });
-
-        var result = db.Truncate(tx);
-
-        Console.WriteLine($"Truncate result: {result}");
-
-        tx.Commit();
     }
 
     public Guid GetOrCreateKey(TradeKey key)
@@ -36,7 +28,8 @@ public class LightningLmdbStore : IStore
 
         key.Write(keyBytes);
 
-        var id = Guid.NewGuid();
+        var id = Ulid.NewUlid().ToGuidFast();
+
         Span<byte> valueBytes = stackalloc byte[16];
 
         if (!id.TryWriteBytes(valueBytes))
@@ -68,6 +61,21 @@ public class LightningLmdbStore : IStore
         return ValueTask.FromResult(GetOrCreateKey(key));
     }
 
+    public void Cleanup()
+    {
+        using var tx = _env.BeginTransaction();
+        using var db = tx.OpenDatabase(configuration: new DatabaseConfiguration { Flags = DatabaseOpenFlags.Create });
+
+        var result = db.Truncate(tx);
+
+        Console.WriteLine($"Truncate result: {result}");
+
+        tx.Commit();
+    }
+
+    public void Recover()
+    {
+    }
 
     public void Dispose()
     {

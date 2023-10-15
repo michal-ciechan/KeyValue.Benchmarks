@@ -1,6 +1,7 @@
 ﻿using DotNet.Testcontainers;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
+using NUlid;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 
@@ -82,18 +83,18 @@ public class RedisTradeKeyStore : IStore
 
         _redisContainer.StartAsync().Wait();
 
-        var port = _redisContainer.GetMappedPublicPort("6379");
-        var connectionString = $"localhost:{port},allowAdmin=true";
+        var connectionString = $"localhost:{Port},allowAdmin=true";
 
         _redis = ConnectionMultiplexer.Connect(connectionString);
 
-        _redis.GetServer("localhost", port).FlushAllDatabases();
     }
+
+    private ushort Port => _redisContainer.GetMappedPublicPort("6379");
 
 
     public Guid GetOrCreateKey(TradeKey key)
     {
-        var id = Guid.NewGuid();
+        var id = Ulid.NewUlid().ToGuidFast();
 
         var redisKey = key.ToString();
         var redisValue = id.ToString();
@@ -114,7 +115,7 @@ public class RedisTradeKeyStore : IStore
 
     public async ValueTask<Guid> GetOrCreateKeyAsync(TradeKey key)
     {
-        var id = Guid.NewGuid();
+        var id = Ulid.NewUlid().ToGuidFast();
 
         var redisKey = key.ToString();
         var redisValue = id.ToString();
@@ -131,6 +132,15 @@ public class RedisTradeKeyStore : IStore
         }
 
         return id;
+    }
+
+    public void Cleanup()
+    {
+        _redis.GetServer("localhost", Port).FlushAllDatabases();
+    }
+
+    public void Recover()
+    {
     }
 
     public void Dispose()
