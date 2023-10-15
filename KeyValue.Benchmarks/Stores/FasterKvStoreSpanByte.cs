@@ -166,26 +166,9 @@ public class FasterKvStoreSpanByte : IStore
         }
     }
 
-    public unsafe ValueTask<Guid> GetOrCreateKeyAsync(TradeKey key)
+    public ValueTask<Guid> GetOrCreateKeyAsync(TradeKey key)
     {
-        using var session = _store.For(TradeKeyFunctions.Instance).NewSession<TradeKeyFunctions>();
-
-        var guid = Guid.Empty;
-
-        Span<byte> keySpan = stackalloc byte[key.SpanSize];
-
-        key.Write(keySpan);
-
-        var keySpanByte = SpanByte.FromFixedSpan(keySpan);
-
-        var result = session.RMW(ref keySpanByte, ref guid);
-
-        if (result.IsPending)
-        {
-            session.CompletePending(wait: true, spinWaitForCommit: _waitForCommit);
-        }
-
-        return ValueTask.FromResult(guid);
+        return ValueTask.FromResult(GetOrCreateKey(key));
     }
 
 
