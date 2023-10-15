@@ -23,6 +23,10 @@ BenchmarkRunner.Run<Benchmarks>(new Config());
 
 Console.WriteLine($"Done in {sw.Elapsed.Humanize()}");
 
+
+
+
+
 class Config : ManualConfig
 {
     public Config()
@@ -32,50 +36,55 @@ class Config : ManualConfig
         Add(DefaultConfig.Instance.GetColumnProviders().ToArray());
 
         SummaryStyle = BenchmarkDotNet.Reports.SummaryStyle.Default.WithTimeUnit(TimeUnit.Millisecond);
+
+        var filter = new SimpleFilter(
+            x =>
+            {
+                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\]";
+
+                var match = Regex.Match(x.Parameters.ValueInfo, regex);
+
+                // throw if not success
+                if (!match.Success)
+                {
+                    throw new Exception(
+                        $"Failed to parse {x.Parameters.ValueInfo}. " +
+                        $"Example expected value is [ParallelIterationCount=1, Store=RedisFsync1Sec]"
+                    );
+                }
+
+                var parallelIterationCount = int.Parse(match.Groups["ParallelIterationCount"].Value);
+                var store = Enum.Parse<StoresEnum>(match.Groups["Store"].Value);
+
+                // return store == Stores.Postgres && parallelIterationCount > 1;
+                // return store == StoresEnum.Lightning && parallelIterationCount == 1;
+
+                if (parallelIterationCount > 10_000)
+                {
+                    switch (store)
+                    {
+                        case StoresEnum.RedisFsyncAlways:
+                        case StoresEnum.RedisFsync1Sec:
+                        case StoresEnum.Redis:
+                            return false;
+                    }
+                }
+
+                return true;
+            }
+        );
+
+        AddFilter(filter);
     }
 }
 
-class CustomDebugConfig : ManualConfig, IConfig
+class CustomDebugConfig : Config, IConfig
 {
     // DebuggableConfig
     IEnumerable<Job> IConfig.GetJobs() => (IEnumerable<Job>) new Job[1]
     {
         JobMode<Job>.Default.WithToolchain((IToolchain) new InProcessEmitToolchain(TimeSpan.FromHours(1.0), true))
     };
-
-    public CustomDebugConfig()
-    {
-        Add(DefaultConfig.Instance.GetExporters().ToArray());
-        Add(DefaultConfig.Instance.GetLoggers().ToArray());
-        Add(DefaultConfig.Instance.GetColumnProviders().ToArray());
-
-        AddFilter(
-            new SimpleFilter(
-                x =>
-                {
-                    var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\]";
-
-                    var match = Regex.Match(x.Parameters.ValueInfo, regex);
-
-                    // throw if not success
-                    if (!match.Success)
-                    {
-                        throw new Exception(
-                            $"Failed to parse {x.Parameters.ValueInfo}. " +
-                            $"Example expected value is [ParallelIterationCount=1, Store=RedisFsync1Sec]"
-                        );
-                    }
-
-                    var parallelIterationCount = int.Parse(match.Groups["ParallelIterationCount"].Value);
-                    var store = Enum.Parse<StoresEnum>(match.Groups["Store"].Value);
-
-                    // return store == Stores.Postgres && parallelIterationCount > 1;
-                    // return store == StoresEnum.Lightning && parallelIterationCount == 1;
-                    return true;
-                }
-            )
-        );
-    }
 }
 
 
@@ -84,13 +93,13 @@ public class Benchmarks
     private List<TradeKey> _keys;
     private IStore _store;
 
-    [Params(1, 10_000, 100_000)]
-    // [Params(10_000)]
+    // [Params(1, 10_000)]
+    [Params(100_000)]
     // [Params(1)]
     public int ParallelIterationCount { get; set; }
 
     [ParamsAllValues]
-    // [Params(StoresEnum.FasterKVSpanByte)]
+    // [Params(StoresEnum.RedisFsyncAlways)]
     // [Params(StoresEnum.FasterKV, StoresEnum.FasterKVSpanByte)]
     public StoresEnum Store { get; set; }
 
