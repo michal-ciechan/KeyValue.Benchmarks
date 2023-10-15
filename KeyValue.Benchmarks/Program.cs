@@ -306,6 +306,21 @@ public enum StoresEnum
 
 public struct TradeKey
 {
+    private sealed class TradeKeyEqualityComparer : IEqualityComparer<TradeKey>
+    {
+        public bool Equals(TradeKey x, TradeKey y)
+        {
+            return x.TradeDate.Equals(y.TradeDate) && x.ExchangeLinkId == y.ExchangeLinkId && x.ExchangeTradeId == y.ExchangeTradeId;
+        }
+
+        public int GetHashCode(TradeKey obj)
+        {
+            return HashCode.Combine(obj.TradeDate, obj.ExchangeLinkId, obj.ExchangeTradeId);
+        }
+    }
+
+    public static IEqualityComparer<TradeKey> TradeKeyComparer { get; } = new TradeKeyEqualityComparer();
+
     public DateOnly TradeDate { get; set; }
     public string ExchangeLinkId { get; set; }
     public string ExchangeTradeId { get; set; }

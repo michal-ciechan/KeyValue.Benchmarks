@@ -7,18 +7,17 @@ public class ConcurrentDictionaryStore : IStore
 
     public ConcurrentDictionaryStore()
     {
-        _store = new ConcurrentDictionary<TradeKey, Guid>();
+        _store = new ConcurrentDictionary<TradeKey, Guid>(TradeKey.TradeKeyComparer);
     }
 
     public Guid GetOrCreateKey(TradeKey key)
     {
-        throw new NotImplementedException();
+        return _store.GetOrAdd(key, _ => Guid.NewGuid());
     }
 
     public ValueTask<Guid> GetOrCreateKeyAsync(TradeKey key)
     {
-        var guid = _store.GetOrAdd(key, _ => Guid.NewGuid());
-        return ValueTask.FromResult(guid);
+        return ValueTask.FromResult(GetOrCreateKey(key));
     }
 
 
