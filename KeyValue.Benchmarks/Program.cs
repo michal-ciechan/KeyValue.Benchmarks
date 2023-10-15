@@ -5,14 +5,18 @@ using System.Text;
 using System.Text.RegularExpressions;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Engines;
 using BenchmarkDotNet.Filters;
 using BenchmarkDotNet.Jobs;
+using BenchmarkDotNet.Order;
+using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
 using BenchmarkDotNet.Toolchains;
 using BenchmarkDotNet.Toolchains.InProcess.Emit;
 using Humanizer;
 using KeyValue.Benchmarks.Stores;
 using Perfolizer.Horology;
+using System.Collections.Immutable;
 
 Console.WriteLine("Hello, World!");
 
@@ -37,10 +41,14 @@ class Config : ManualConfig
 
         SummaryStyle = BenchmarkDotNet.Reports.SummaryStyle.Default.WithTimeUnit(TimeUnit.Millisecond);
 
+
+
+
+
         var filter = new SimpleFilter(
             x =>
             {
-                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\]";
+                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\, Rnd=(?<Rnd>\w+)\]";
 
                 var match = Regex.Match(x.Parameters.ValueInfo, regex);
 
@@ -55,6 +63,7 @@ class Config : ManualConfig
 
                 var parallelIterationCount = int.Parse(match.Groups["ParallelIterationCount"].Value);
                 var store = Enum.Parse<StoresEnum>(match.Groups["Store"].Value);
+                var rnd = bool.Parse(match.Groups["Rnd"].Value);
 
                 // return store == Stores.Postgres && parallelIterationCount > 1;
                 // return store == StoresEnum.Lightning && parallelIterationCount == 1;
@@ -76,24 +85,52 @@ class Config : ManualConfig
 
         AddFilter(filter);
     }
+
+    // public class Orderer : DefaultOrderer
+    // {
+    //     public override IEnumerable<BenchmarkCase> GetSummaryOrder(ImmutableArray<BenchmarkCase> benchmarksCases, Summary summary)
+    //     {
+    //         return benchmarksCases;
+    //     }
+    //
+    //     public override string? GetHighlightGroupKey(BenchmarkCase benchmarkCase)
+    //     {
+    //         throw new NotImplementedException();
+    //     }
+    //
+    //     public string? GetLogicalGroupKey(ImmutableArray<BenchmarkCase> allBenchmarksCases, BenchmarkCase benchmarkCase)
+    //     {
+    //         throw new NotImplementedException();
+    //     }
+    //
+    //     public IEnumerable<IGrouping<string, BenchmarkCase>> GetLogicalGroupOrder(IEnumerable<IGrouping<string, BenchmarkCase>> logicalGroups, IEnumerable<BenchmarkLogicalGroupRule>? order = null)
+    //     {
+    //         throw new NotImplementedException();
+    //     }
+    //
+    //     public bool SeparateLogicalGroups { get; set; }
+    // }
 }
 
 class CustomDebugConfig : Config, IConfig
 {
     // DebuggableConfig
-    IEnumerable<Job> IConfig.GetJobs() => (IEnumerable<Job>) new Job[1]
+    IEnumerable<Job> IConfig.GetJobs() => (IEnumerable<Job>)new Job[1]
     {
-        JobMode<Job>.Default.WithToolchain((IToolchain) new InProcessEmitToolchain(TimeSpan.FromHours(1.0), true))
+        JobMode<Job>.Default.WithToolchain((IToolchain)new InProcessEmitToolchain(TimeSpan.FromHours(1.0), true));
     };
 }
 
+
+[SimpleJob(RunStrategy.Monitoring)]
+[GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByParams)]
 public class Benchmarks
 {
     private List<TradeKey> _keys;
     private IStore _store;
 
     // [Params(1, 10_000)]
-    [Params(100_000)]
+    [Params(10_000)]
     // [Params(1)]
     public int ParallelIterationCount { get; set; }
 
@@ -102,18 +139,16 @@ public class Benchmarks
     // [Params(StoresEnum.FasterKV, StoresEnum.FasterKVSpanByte)]
     public StoresEnum Store { get; set; }
 
+    [ParamsAllValues]
+    // [Params(StoresEnum.RedisFsyncAlways)]
+    // [Params(StoresEnum.FasterKV, StoresEnum.FasterKVSpanByte)]
+    public KeyRandomness Key { get; set; }
+
     [GlobalSetup]
     public void GlobalSetup()
     {
         _keys = Enumerable.Range(1, 1000)
-            .Select(
-                x => new TradeKey
-                {
-                    TradeDate = new DateOnly(2021, 1, 1).AddDays(Random.Shared.Next(0, 365)),
-                    ExchangeLinkId = Guid.NewGuid().ToString(),
-                    ExchangeTradeId = Guid.NewGuid().ToString(),
-                }
-            )
+            .Select(_ => CreateTradeKey())
             .ToList();
 
         _store = Store switch
@@ -141,25 +176,41 @@ public class Benchmarks
         }
     }
 
+    private static TradeKey CreateTradeKey()
+    {
+        return new TradeKey
+        {
+            TradeDate = new DateOnly(2021, 1, 1).AddDays(Random.Shared.Next(0, 365)),
+            ExchangeLinkId = Guid.NewGuid().ToString(),
+            ExchangeTradeId = Guid.NewGuid().ToString(),
+        };
+    }
+
     [GlobalCleanup]
     public void Cleanup()
     {
         _store.Dispose();
     }
 
+    // [Benchmark]
+    // public bool EnumerableSync()
+    // {
+    //     return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
+    // }
+
     [Benchmark]
-    public bool ParallelAsync()
+    public bool EnumerableAsync()
     {
-        return RunParallelAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
+        return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
     }
 
-    private bool RunParallelAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
+    private bool RunEnumerableAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
         var tasks = Enumerable.Range(0, ParallelIterationCount)
             .Select(
                 async i =>
                 {
-                    var key = _keys[i % _keys.Count];
+                    var key = GetKey(i);
 
                     var id = await generator(key);
 
@@ -171,6 +222,13 @@ public class Benchmarks
         var res = Task.WhenAll(tasks).GetAwaiter().GetResult();
 
         return res.All(x => x != Guid.Empty);
+    }
+
+    private TradeKey GetKey(int i)
+    {
+        return Key == KeyRandomness.Random
+            ? CreateTradeKey()
+            : _keys[i % _keys.Count];
     }
 
     private bool RunParallelLoop(Func<TradeKey, Guid> generator)
@@ -192,6 +250,12 @@ public class Benchmarks
 
         return res.All(x => x != Guid.Empty);
     }
+}
+
+public enum KeyRandomness
+{
+    Random,
+    Exist,
 }
 
 public enum StoresEnum
