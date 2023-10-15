@@ -196,11 +196,11 @@ public class Benchmarks
         _store.Dispose();
     }
 
-    // [Benchmark]
-    // public bool EnumerableSync()
-    // {
-    //     return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
-    // }
+    [Benchmark]
+    public bool EnumerableSync()
+    {
+        return RunEnumerableLoop(key => _store.GetOrCreateKey(key));
+    }
 
     [Benchmark]
     public bool EnumerableAsync()
@@ -209,15 +209,29 @@ public class Benchmarks
     }
 
     [Benchmark]
+    public bool ParallelSync()
+    {
+        return RunParallelLoop(key => _store.GetOrCreateKey(key));
+    }
+
+    [Benchmark]
     public bool ParallelAsync()
     {
         return RunParallelAsyncLoop(key => _store.GetOrCreateKeyAsync(key)).GetAwaiter().GetResult();
     }
 
-    [Benchmark]
-    public bool ParallelSync()
+    private bool RunEnumerableLoop(Func<TradeKey, Guid> generator)
     {
-        return RunParallelLoop(key => _store.GetOrCreateKey(key));
+        for (var i = 0; i < Count; i++)
+        {
+            var key = GetKey(i);
+
+            var id = generator(key);
+
+            _res[i] = id;
+        }
+
+        return VerifyCorrectness();
     }
 
     private async Task<bool> RunEnumerableAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
@@ -235,17 +249,27 @@ public class Benchmarks
             )
             .ToList();
 
-        var res = await Task.WhenAll(tasks);
+        _res = await Task.WhenAll(tasks);
 
-        return res.All(x => x != Guid.Empty);
+        return VerifyCorrectness();
     }
 
-    private TradeKey GetKey(int i)
+    private bool RunParallelLoop(Func<TradeKey, Guid> generator)
     {
-        return Key == KeyRandomness.Random
-            ? CreateTradeKey()
-            : _keys[i % _keys.Count];
+        Parallel.For(0, Count,
+            i =>
+            {
+                var key = GetKey(i);
+
+                var id = generator(key);
+
+                _res[i] = id;
+            }
+        );
+
+        return VerifyCorrectness();
     }
+
 
     private async Task<bool> RunParallelAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
@@ -262,25 +286,19 @@ public class Benchmarks
             }
         );
 
-        return _res.All(x => x != Guid.Empty);
+        return VerifyCorrectness();
     }
 
-    private bool RunParallelLoop(Func<TradeKey, Guid> generator)
+    private bool VerifyCorrectness()
     {
-        var keys = Enumerable.Range(0, Count).Select(x => (GetKey(x), Index: x));
+        return _res.All(x => x == Guid.Empty ? throw new Exception("Empty Guid") : true);
+    }
 
-        Parallel.ForEach(keys,
-            (input, _) =>
-            {
-                var (key, i) = input;
-
-                var id = generator(key);
-
-                _res[i] = id;
-            }
-        );
-
-        return _res.All(x => x != Guid.Empty);
+    private TradeKey GetKey(int i)
+    {
+        return Key == KeyRandomness.Random
+            ? CreateTradeKey()
+            : _keys[i % _keys.Count];
     }
 }
 
