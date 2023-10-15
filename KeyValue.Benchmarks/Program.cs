@@ -48,7 +48,7 @@ class Config : ManualConfig
         var filter = new SimpleFilter(
             x =>
             {
-                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\, Rnd=(?<Rnd>\w+)\]";
+                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\, Key=(?<Key>\w+)\]";
 
                 var match = Regex.Match(x.Parameters.ValueInfo, regex);
 
@@ -57,13 +57,13 @@ class Config : ManualConfig
                 {
                     throw new Exception(
                         $"Failed to parse {x.Parameters.ValueInfo}. " +
-                        $"Example expected value is [ParallelIterationCount=1, Store=RedisFsync1Sec]"
+                        $"Example expected value is [ParallelIterationCount=10000, Store=RedisFsync1Sec, Key=Random]"
                     );
                 }
 
                 var parallelIterationCount = int.Parse(match.Groups["ParallelIterationCount"].Value);
                 var store = Enum.Parse<StoresEnum>(match.Groups["Store"].Value);
-                var rnd = bool.Parse(match.Groups["Rnd"].Value);
+                var key = Enum.Parse<KeyRandomness>(match.Groups["Key"].Value);
 
                 // return store == Stores.Postgres && parallelIterationCount > 1;
                 // return store == StoresEnum.Lightning && parallelIterationCount == 1;
@@ -129,6 +129,7 @@ public class Benchmarks
 {
     private List<TradeKey> _keys;
     private IStore _store;
+    private Guid[] _res;
 
     // [Params(1, 10_000)]
     [Params(10_000)]
@@ -151,6 +152,8 @@ public class Benchmarks
         _keys = Enumerable.Range(1, 1000)
             .Select(_ => CreateTradeKey())
             .ToList();
+
+        _res = new Guid[ParallelIterationCount];
 
         _store = Store switch
         {
@@ -200,12 +203,24 @@ public class Benchmarks
     // }
 
     [Benchmark]
-    public bool EnumerableAsync()
+    public Task<bool> EnumerableAsync()
     {
         return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
     }
 
-    private bool RunEnumerableAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
+    [Benchmark]
+    public Task<bool> ParallelAsync()
+    {
+        return RunParallelAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
+    }
+
+    [Benchmark]
+    public bool ParallelSync()
+    {
+        return RunParallelLoop(key => _store.GetOrCreateKey(key));
+    }
+
+    private async Task<bool> RunEnumerableAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
         var tasks = Enumerable.Range(0, ParallelIterationCount)
             .Select(
@@ -220,7 +235,7 @@ public class Benchmarks
             )
             .ToList();
 
-        var res = Task.WhenAll(tasks).GetAwaiter().GetResult();
+        var res = await Task.WhenAll(tasks);
 
         return res.All(x => x != Guid.Empty);
     }
@@ -232,24 +247,40 @@ public class Benchmarks
             : _keys[i % _keys.Count];
     }
 
-    private bool RunParallelLoop(Func<TradeKey, Guid> generator)
+    private async Task<bool> RunParallelAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
-        var res = new Guid[ParallelIterationCount];
+        var keys = Enumerable.Range(0, ParallelIterationCount).Select(x => (GetKey(x), Index: x));
 
-        Parallel.For(
-            0,
-            ParallelIterationCount,
-            i =>
+        await Parallel.ForEachAsync(keys,
+            async (input, _) =>
             {
-                var key = _keys[i % _keys.Count];
+                var (key, i) = input;
 
                 var id = generator(key);
 
-                res[i] = id;
+                _res[i] = await id;
             }
         );
 
-        return res.All(x => x != Guid.Empty);
+        return _res.All(x => x != Guid.Empty);
+    }
+
+    private bool RunParallelLoop(Func<TradeKey, Guid> generator)
+    {
+        var keys = Enumerable.Range(0, ParallelIterationCount).Select(x => (GetKey(x), Index: x));
+
+        Parallel.ForEach(keys,
+            (input, _) =>
+            {
+                var (key, i) = input;
+
+                var id = generator(key);
+
+                _res[i] = id;
+            }
+        );
+
+        return _res.All(x => x != Guid.Empty);
     }
 }
 
