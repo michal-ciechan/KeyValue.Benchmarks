@@ -48,7 +48,7 @@ class Config : ManualConfig
         var filter = new SimpleFilter(
             x =>
             {
-                var regex = @"\[ParallelIterationCount=(?<ParallelIterationCount>\d+), Store=(?<Store>\w+)\, Key=(?<Key>\w+)\]";
+                var regex = @"\[Count=(?<Count>\d+), Store=(?<Store>\w+)\, Key=(?<Key>\w+)\]";
 
                 var match = Regex.Match(x.Parameters.ValueInfo, regex);
 
@@ -57,11 +57,11 @@ class Config : ManualConfig
                 {
                     throw new Exception(
                         $"Failed to parse {x.Parameters.ValueInfo}. " +
-                        $"Example expected value is [ParallelIterationCount=10000, Store=RedisFsync1Sec, Key=Random]"
+                        $"Example expected value is [Count=10000, Store=RedisFsync1Sec, Key=Random]"
                     );
                 }
 
-                var parallelIterationCount = int.Parse(match.Groups["ParallelIterationCount"].Value);
+                var parallelIterationCount = int.Parse(match.Groups["Count"].Value);
                 var store = Enum.Parse<StoresEnum>(match.Groups["Store"].Value);
                 var key = Enum.Parse<KeyRandomness>(match.Groups["Key"].Value);
 
@@ -122,8 +122,8 @@ class CustomDebugConfig : Config, IConfig
 }
 
 
-[SimpleJob(RunStrategy.Monitoring)]
-[GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByParams)]
+[SimpleJob(RunStrategy.Monitoring, iterationCount: 10)]
+[GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByMethod)]
 [MinColumn, MaxColumn, MeanColumn, MedianColumn]
 public class Benchmarks
 {
@@ -134,7 +134,7 @@ public class Benchmarks
     // [Params(1, 10_000)]
     [Params(10_000)]
     // [Params(1)]
-    public int ParallelIterationCount { get; set; }
+    public int Count { get; set; }
 
     // [ParamsAllValues]
     // [Params(StoresEnum.RedisFsyncAlways)]
@@ -153,7 +153,7 @@ public class Benchmarks
             .Select(_ => CreateTradeKey())
             .ToList();
 
-        _res = new Guid[ParallelIterationCount];
+        _res = new Guid[Count];
 
         _store = Store switch
         {
@@ -222,7 +222,7 @@ public class Benchmarks
 
     private async Task<bool> RunEnumerableAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
-        var tasks = Enumerable.Range(0, ParallelIterationCount)
+        var tasks = Enumerable.Range(0, Count)
             .Select(
                 async i =>
                 {
@@ -249,7 +249,7 @@ public class Benchmarks
 
     private async Task<bool> RunParallelAsyncLoop(Func<TradeKey, ValueTask<Guid>> generator)
     {
-        var keys = Enumerable.Range(0, ParallelIterationCount).Select(x => (GetKey(x), Index: x));
+        var keys = Enumerable.Range(0, Count).Select(x => (GetKey(x), Index: x));
 
         await Parallel.ForEachAsync(keys,
             async (input, _) =>
@@ -267,7 +267,7 @@ public class Benchmarks
 
     private bool RunParallelLoop(Func<TradeKey, Guid> generator)
     {
-        var keys = Enumerable.Range(0, ParallelIterationCount).Select(x => (GetKey(x), Index: x));
+        var keys = Enumerable.Range(0, Count).Select(x => (GetKey(x), Index: x));
 
         Parallel.ForEach(keys,
             (input, _) =>
