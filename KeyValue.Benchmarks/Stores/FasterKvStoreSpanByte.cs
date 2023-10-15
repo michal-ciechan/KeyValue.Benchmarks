@@ -63,7 +63,24 @@ public class FasterKvStoreSpanByte : IStore
 
     public Guid GetOrCreateKey(TradeKey key)
     {
-        throw new NotImplementedException();
+        using var session = _store.For(TradeKeyFunctions.Instance).NewSession<TradeKeyFunctions>();
+
+        var guid = Guid.Empty;
+
+        Span<byte> keySpan = stackalloc byte[key.SpanSize];
+
+        key.Write(keySpan);
+
+        var keySpanByte = SpanByte.FromFixedSpan(keySpan);
+
+        var result = session.RMW(ref keySpanByte, ref guid);
+
+        if (result.IsPending)
+        {
+            session.CompletePending(wait: true, spinWaitForCommit: _waitForCommit);
+        }
+
+        return guid;
     }
 
     public sealed class TradeKeyFunctions : FunctionsBase<SpanByte, Guid, Guid, Guid, Empty>

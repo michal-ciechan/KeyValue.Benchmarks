@@ -124,6 +124,7 @@ class CustomDebugConfig : Config, IConfig
 
 [SimpleJob(RunStrategy.Monitoring)]
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByParams)]
+[MinColumn, MaxColumn, MeanColumn, MedianColumn]
 public class Benchmarks
 {
     private List<TradeKey> _keys;
@@ -134,9 +135,9 @@ public class Benchmarks
     // [Params(1)]
     public int ParallelIterationCount { get; set; }
 
-    [ParamsAllValues]
+    // [ParamsAllValues]
     // [Params(StoresEnum.RedisFsyncAlways)]
-    // [Params(StoresEnum.FasterKV, StoresEnum.FasterKVSpanByte)]
+    [Params(StoresEnum.Lightning, StoresEnum.FasterKVSpanByte, StoresEnum.ConcurrentDictionary)]
     public StoresEnum Store { get; set; }
 
     [ParamsAllValues]
