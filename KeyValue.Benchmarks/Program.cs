@@ -87,7 +87,6 @@ class CustomDebugConfig : Config, IConfig
     };
 }
 
-
 public class Benchmarks
 {
     private List<TradeKey> _keys;
