@@ -203,15 +203,15 @@ public class Benchmarks
     // }
 
     [Benchmark]
-    public Task<bool> EnumerableAsync()
+    public bool EnumerableAsync()
     {
-        return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
+        return RunEnumerableAsyncLoop(key => _store.GetOrCreateKeyAsync(key)).GetAwaiter().GetResult();
     }
 
     [Benchmark]
-    public Task<bool> ParallelAsync()
+    public bool ParallelAsync()
     {
-        return RunParallelAsyncLoop(key => _store.GetOrCreateKeyAsync(key));
+        return RunParallelAsyncLoop(key => _store.GetOrCreateKeyAsync(key)).GetAwaiter().GetResult();
     }
 
     [Benchmark]
