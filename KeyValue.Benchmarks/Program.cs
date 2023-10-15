@@ -72,9 +72,9 @@ class Config : ManualConfig
                 {
                     switch (store)
                     {
-                        case StoresEnum.RedisFsyncAlways:
-                        case StoresEnum.RedisFsync1Sec:
-                        case StoresEnum.Redis:
+                        case StoresEnum.RedisFsyncAlways: // Timesout @ 100k
+                        case StoresEnum.RedisFsync1Sec: // Timesout @ 100k
+                        case StoresEnum.Redis: // Timesout @ 100k
                             return false;
                     }
                 }
@@ -117,7 +117,7 @@ class CustomDebugConfig : Config, IConfig
     // DebuggableConfig
     IEnumerable<Job> IConfig.GetJobs() => (IEnumerable<Job>)new Job[1]
     {
-        JobMode<Job>.Default.WithToolchain((IToolchain)new InProcessEmitToolchain(TimeSpan.FromHours(1.0), true));
+        JobMode<Job>.Default.WithToolchain((IToolchain)new InProcessEmitToolchain(TimeSpan.FromHours(1.0), true)),
     };
 }
 
